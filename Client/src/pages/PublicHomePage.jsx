@@ -6,7 +6,7 @@ import { api } from "../api";
 import pvcPipeImage from "../assets/WhatsApp Image 2026-05-06 at 3.04.03 PM.jpeg";
 import sprinklerPipeImage from "../assets/irrigation-sprinklers-500x500.webp";
 import miniSprinklerImage from "../assets/1718112762-13-dec-23.jpg";
-import onlinePanjikaranImage from "../assets/WhatsApp Image 2026-05-06 at 3.04.03 PM.jpeg";
+import onlinePanjikaranImage from "../assets/registration-isolated-floral-plants-pattern-green-hexagon-button-registration-floral-plants-pattern-green-hexagon-button-143196001.webp";
 import anudanYojnaImage from "../assets/yujna.png";
 
 const STATIC_HINDI_CONTENT = {
