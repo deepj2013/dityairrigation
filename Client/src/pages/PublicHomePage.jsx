@@ -3,10 +3,10 @@ import { motion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import pvcPipeImage from "../assets/WhatsApp Image 2026-05-06 at 6.13.04 PM.jpeg";
+import pvcPipeImage from "../assets/WhatsApp Image 2026-05-06 at 3.04.03 PM.jpeg";
 import sprinklerPipeImage from "../assets/irrigation-sprinklers-500x500.webp";
 import miniSprinklerImage from "../assets/1718112762-13-dec-23.jpg";
-import onlinePanjikaranImage from "../assets/WhatsApp Image 2026-05-06 at 6.13.04 PM.jpeg";
+import onlinePanjikaranImage from "../assets/WhatsApp Image 2026-05-06 at 3.04.03 PM.jpeg";
 import anudanYojnaImage from "../assets/yujna.png";
 
 const STATIC_HINDI_CONTENT = {
