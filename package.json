@@ -1,0 +1,15 @@
+{
+  "name": "dityairrigation",
+  "version": "1.0.0",
+  "description": "MERN irrigation management system",
+  "type": "module",
+  "scripts": {
+    "client:dev": "npm run dev --prefix Client",
+    "client:build": "npm run build --prefix Client",
+    "server:dev": "npm run dev --prefix Server",
+    "server:seed": "npm run seed --prefix Server"
+  },
+  "keywords": ["mern", "agriculture", "hindi", "rbac"],
+  "author": "",
+  "license": "ISC"
+}
