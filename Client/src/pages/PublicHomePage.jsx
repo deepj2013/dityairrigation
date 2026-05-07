@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import { renderNoticeContent } from "../utils/noticeFormatter";
 import pvcPipeImage from "../assets/WhatsApp Image 2026-05-06 at 3.04.03 PM.jpeg";
 import sprinklerPipeImage from "../assets/irrigation-sprinklers-500x500.webp";
 import miniSprinklerImage from "../assets/1718112762-13-dec-23.jpg";
@@ -51,10 +52,10 @@ const STATIC_HINDI_CONTENT = {
     "योजना अनुसार तकनीकी मार्गदर्शन"
   ],
   contact: {
-    name: "रमेश राजपूत",
+    name: "रुपेश राजपूत",
     mobile: "8319171144",
     email: "dityairrigation@gmail.com",
-    address: "रिछिया रोड, मालवीय वार्ड, सिवनी (म.प्र.)",
+    address: "बेहरी फाटा, बागली, जिला देवास, मध्य प्रदेश",
     whatsapp: "918319171144"
   }
 };
@@ -141,7 +142,9 @@ function PublicHomePage() {
   });
   const [heroImageIndex, setHeroImageIndex] = useState(0);
   const [assetHeroImages, setAssetHeroImages] = useState([]);
-  const [showIntroBanner, setShowIntroBanner] = useState(true);
+  const [showIntroBanner, setShowIntroBanner] = useState(false);
+  const [noticeIndex, setNoticeIndex] = useState(0);
+  const notices = useMemo(() => data.notices || [], [data.notices]);
 
   useEffect(() => {
     const loadLocalHeroAssets = async () => {
@@ -159,24 +162,104 @@ function PublicHomePage() {
   }, []);
 
   useEffect(() => {
-    if (assetHeroImages.length <= 1) return undefined;
+    setShowIntroBanner((data.notices || []).length > 0);
+  }, [data.notices]);
+
+  useEffect(() => {
+    if (!data.notices?.length) {
+      setNoticeIndex(0);
+      return;
+    }
+    setNoticeIndex((prev) => (prev >= data.notices.length ? 0 : prev));
+  }, [data.notices]);
+
+  useEffect(() => {
+    if (!showIntroBanner || notices.length <= 1) return undefined;
 
     const timer = setInterval(() => {
-      setHeroImageIndex((prev) => (prev + 1) % assetHeroImages.length);
+      setNoticeIndex((prev) => (prev + 1) % notices.length);
+    }, 4500);
+
+    return () => clearInterval(timer);
+  }, [notices, showIntroBanner]);
+
+  useEffect(() => {
+    const dynamicGallery = data.gallery || [];
+    if (dynamicGallery.length <= 1 && assetHeroImages.length <= 1) return undefined;
+
+    const timer = setInterval(() => {
+      const total = dynamicGallery.length > 1 ? dynamicGallery.length : assetHeroImages.length;
+      setHeroImageIndex((prev) => (prev + 1) % total);
     }, 2800);
 
     return () => clearInterval(timer);
-  }, [assetHeroImages]);
+  }, [assetHeroImages, data.gallery]);
 
   const activeHeroImage =
+    data.gallery?.[heroImageIndex % Math.max(data.gallery?.length || 1, 1)]?.imageUrl ||
     assetHeroImages[heroImageIndex] ||
-    data.gallery?.[0]?.imageUrl ||
     "https://images.unsplash.com/photo-1592982537447-7440770cbfc9";
   const contact = useMemo(() => STATIC_HINDI_CONTENT.contact, []);
+  const activeNotice = notices[noticeIndex];
+  const dynamicAbout = data.about?.[0];
+  const dynamicServices = data.services || [];
+  const dynamicTools = data.tools || [];
+  const dynamicContact = data.contact?.[0];
+
+  const resolvedAbout = dynamicAbout
+    ? {
+        text: (isHindi ? dynamicAbout.descriptionHi : dynamicAbout.descriptionEn) || content.about,
+        image: dynamicAbout.imageUrl || assetHeroImages[1] || "https://images.unsplash.com/photo-1625246333195-78d9c38ad449"
+      }
+    : {
+        text: content.about,
+        image: assetHeroImages[1] || "https://images.unsplash.com/photo-1625246333195-78d9c38ad449"
+      };
+
+  const resolvedServices =
+    dynamicServices.length > 0
+      ? dynamicServices.map((item, index) => ({
+          key: item._id || `${item.titleHi}-${index}`,
+          title: (isHindi ? item.titleHi : item.titleEn) || item.titleHi || item.titleEn,
+          description: (isHindi ? item.descriptionHi : item.descriptionEn) || item.descriptionHi || item.descriptionEn,
+          image: item.imageUrl || content.services[index % content.services.length]?.image
+        }))
+      : content.services;
+
+  const resolvedTools =
+    dynamicTools.length > 0
+      ? dynamicTools.map((item, index) => ({
+          key: item._id || `${item.titleHi}-${index}`,
+          title: (isHindi ? item.titleHi : item.titleEn) || item.titleHi || item.titleEn,
+          description:
+            (isHindi ? item.descriptionHi : item.descriptionEn) ||
+            item.descriptionHi ||
+            item.descriptionEn ||
+            (isHindi
+              ? "हमारी तकनीकी टीम द्वारा खेत की आवश्यकता अनुसार समाधान।"
+              : "Practical solutions delivered by our technical team as per field requirements.")
+        }))
+      : content.tools.map((item, index) => ({
+          key: `tool-${index}`,
+          title: item,
+          description: isHindi
+            ? "हमारी तकनीकी टीम द्वारा खेत की आवश्यकता अनुसार समाधान।"
+            : "Practical solutions delivered by our technical team as per field requirements."
+        }));
+
+  const resolvedContact = dynamicContact
+    ? {
+        name: dynamicContact.meta?.name || contact.name,
+        mobile: dynamicContact.meta?.mobile || contact.mobile,
+        email: dynamicContact.meta?.email || contact.email,
+        address: dynamicContact.meta?.address || contact.address,
+        whatsapp: dynamicContact.meta?.whatsapp || contact.whatsapp
+      }
+    : contact;
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {showIntroBanner && (
+      {showIntroBanner && activeNotice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl md:p-6">
             <button
@@ -185,35 +268,55 @@ function PublicHomePage() {
             >
               X
             </button>
-            <h2 className="mb-4 text-center text-2xl font-black text-red-600">निःशुल्क पंजीयन</h2>
-            <p className="text-lg leading-8 text-green-700">
-              तार फेंसिंग, ड्रिप, मिनी स्प्रिंकलर, पाइप लाइन, प्याज हाउस, नेट हाउस, पम्प इत्यादि की विभिन्न योजनाओं
-              के लिए ऑनलाइन पंजीयन शुरू हो गए हैं। निःशुल्क पंजीयन करवाने के लिए कृपया डॉक्यूमेंट व्हाट्सएप करें।
-            </p>
-            <ol className="mt-4 list-decimal space-y-2 pl-6 text-lg text-sky-700">
-              <li>आधार कार्ड दोनों साइड</li>
-              <li>पावती या जमीन के कागज</li>
-              <li>समग्र आई डी</li>
-              <li>पासपोर्ट फोटो</li>
-              <li>बैंक पास बुक का प्रथम पेज</li>
-              <li>जाति प्रमाण पत्र (अजा / अजजा के लिए)</li>
-              <li>प्रत्येक के लिए आधार से लिंक मोबाइल नंबर</li>
-            </ol>
-            <p className="mt-3 text-xl font-bold text-red-600">व्हाट्सएप करें :- 8319171144 (रूपेश राजपूत, बागली)</p>
-            <p className="mt-2 text-lg text-slate-800">
-              नोट: तीन या चार बार ओटीपी लगेगी, केवल इसी नंबर पर पूछकर ही दें।
-            </p>
-            <p className="mt-2 text-lg text-slate-800">
-              (कृषक ऑनलाइन लॉटरी के द्वारा चयनित किए जाएंगे, पंजीयन सात सालों के लिए होगा)
-            </p>
-            <a
-              href={`https://wa.me/${contact.whatsapp}`}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-5 inline-flex items-center justify-center rounded-full bg-green-500 px-6 py-3 text-base font-bold text-white"
+            <motion.div
+              key={activeNotice._id || noticeIndex}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
             >
-              WhatsApp पर डॉक्यूमेंट भेजें
-            </a>
+              {(isHindi ? activeNotice.titleHi : activeNotice.titleEn) && (
+                <h2 className="mb-4 text-center text-2xl font-black text-red-600">
+                  {isHindi ? activeNotice.titleHi : activeNotice.titleEn}
+                </h2>
+              )}
+              <div className="space-y-2 text-lg leading-8 text-green-700">
+                {renderNoticeContent(
+                  (isHindi ? activeNotice.descriptionHi : activeNotice.descriptionEn) ||
+                    activeNotice.descriptionHi ||
+                    activeNotice.descriptionEn
+                )}
+              </div>
+              {activeNotice.imageUrl && (
+                <div className="mt-5 flex max-h-[44vh] min-h-[220px] items-center justify-center overflow-hidden rounded-xl bg-slate-100 p-2">
+                  <img
+                    src={activeNotice.imageUrl}
+                    alt={isHindi ? activeNotice.titleHi || "सूचना" : activeNotice.titleEn || "Notification"}
+                    className="h-full max-h-[40vh] w-full object-contain"
+                  />
+                </div>
+              )}
+            </motion.div>
+            {notices.length > 1 && (
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNoticeIndex((prev) => (prev - 1 + notices.length) % notices.length)}
+                  className="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700"
+                >
+                  Prev
+                </button>
+                <p className="text-xs font-semibold text-slate-500">
+                  {noticeIndex + 1} / {notices.length}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setNoticeIndex((prev) => (prev + 1) % notices.length)}
+                  className="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -230,7 +333,7 @@ function PublicHomePage() {
           </nav>
           <div className="flex items-center gap-1 md:gap-2">
             <a
-              href={`https://wa.me/${contact.whatsapp}`}
+              href={`https://wa.me/${resolvedContact.whatsapp}`}
               target="_blank"
               rel="noreferrer"
               className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-green-300 bg-green-50 text-green-700"
@@ -270,10 +373,10 @@ function PublicHomePage() {
       </section>
 
       <section id="about" className="mx-auto grid max-w-6xl gap-5 px-4 py-8 md:py-12 md:grid-cols-2">
-        <img src={assetHeroImages[1] || "https://images.unsplash.com/photo-1625246333195-78d9c38ad449"} className="h-72 w-full rounded-2xl object-cover" />
+        <img src={resolvedAbout.image} className="h-72 w-full rounded-2xl object-cover" />
         <div className="rounded-2xl bg-white p-6 shadow">
           <h2 className="text-2xl font-bold text-slate-900">{labels.aboutHeading}</h2>
-          <p className="mt-3 text-slate-600">{content.about}</p>
+          <p className="mt-3 text-slate-600">{resolvedAbout.text}</p>
         </div>
       </section>
 
@@ -281,7 +384,7 @@ function PublicHomePage() {
         <div className="mx-auto max-w-6xl px-4">
           <h2 className="text-2xl font-black text-slate-900 md:text-3xl">{labels.services}</h2>
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {content.services.map((item, index) => (
+            {resolvedServices.map((item) => (
               <div key={item.key} className="rounded-2xl border bg-slate-50 p-4">
                 <img src={item.image} className="h-40 w-full rounded-xl object-cover" />
                 <h3 className="mt-3 font-bold text-slate-900">{item.title}</h3>
@@ -296,14 +399,10 @@ function PublicHomePage() {
         <div className="mx-auto max-w-6xl px-4">
           <h2 className="text-2xl font-black text-slate-900 md:text-3xl">{labels.tools}</h2>
           <div className="mt-6 grid gap-4 md:grid-cols-2">
-            {content.tools.map((item) => (
-              <div key={item} className="rounded-2xl bg-white p-5 shadow">
-                <h3 className="font-bold text-slate-900">{item}</h3>
-                <p className="text-sm text-slate-600">
-                  {isHindi
-                    ? "हमारी तकनीकी टीम द्वारा खेत की आवश्यकता अनुसार समाधान।"
-                    : "Practical solutions delivered by our technical team as per field requirements."}
-                </p>
+            {resolvedTools.map((item) => (
+              <div key={item.key} className="rounded-2xl bg-white p-5 shadow">
+                <h3 className="font-bold text-slate-900">{item.title}</h3>
+                <p className="text-sm text-slate-600">{item.description}</p>
               </div>
             ))}
           </div>
@@ -315,21 +414,21 @@ function PublicHomePage() {
           <h2 className="text-2xl font-black md:text-3xl">{labels.contactHeading}</h2>
           <p className="mt-2 text-slate-300">{labels.contactLine}</p>
           <div className="mt-3 space-y-1 text-sm text-slate-200">
-            <p>{labels.name}: {contact.name}</p>
-            <p>{labels.mobile}: {contact.mobile}</p>
-            <p>{labels.email}: {contact.email}</p>
-            <p>{labels.address}: {contact.address}</p>
+            <p>{labels.name}: {resolvedContact.name}</p>
+            <p>{labels.mobile}: {resolvedContact.mobile}</p>
+            <p>{labels.email}: {resolvedContact.email}</p>
+            <p>{labels.address}: {resolvedContact.address}</p>
           </div>
           <div className="mt-5 flex flex-wrap gap-3">
-            <a href={`https://wa.me/${contact.whatsapp}`} target="_blank" className="rounded-full bg-green-500 px-5 py-2 font-bold text-white">WhatsApp</a>
-            <a href={`tel:+91${contact.mobile}`} className="rounded-full border border-slate-400 px-5 py-2">{labels.callNow}</a>
-            <a href={`mailto:${contact.email}`} className="rounded-full border border-slate-400 px-5 py-2">Email</a>
+            <a href={`https://wa.me/${resolvedContact.whatsapp}`} target="_blank" className="rounded-full bg-green-500 px-5 py-2 font-bold text-white">WhatsApp</a>
+            <a href={`tel:+91${resolvedContact.mobile}`} className="rounded-full border border-slate-400 px-5 py-2">{labels.callNow}</a>
+            <a href={`mailto:${resolvedContact.email}`} className="rounded-full border border-slate-400 px-5 py-2">Email</a>
           </div>
         </div>
       </section>
 
       <a
-        href={`https://wa.me/${contact.whatsapp}`}
+        href={`https://wa.me/${resolvedContact.whatsapp}`}
         target="_blank"
         rel="noreferrer"
         aria-label="WhatsApp chat"

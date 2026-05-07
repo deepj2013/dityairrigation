@@ -1,6 +1,32 @@
 import XLSX from "xlsx";
 import FileSheet from "../models/FileSheet.js";
 
+const normalizePermission = (value) => {
+  if (value === true) return { read: true, write: true };
+  if (!value || typeof value !== "object") return { read: false, write: false };
+  return { read: Boolean(value.read || value.write), write: Boolean(value.write) };
+};
+
+const getAccessibleFileFilter = (user) => {
+  if (user.role === "UNIVERSAL_ADMIN") return {};
+
+  const filePermission = normalizePermission(user.permissions?.canManageFiles);
+  if (!filePermission.read && !filePermission.write) {
+    return { _id: null };
+  }
+
+  const includeOwnUploads = user.fileAccess?.includeOwnUploads !== false;
+  const allowedIds = Array.isArray(user.fileAccess?.allowedFileIds)
+    ? user.fileAccess.allowedFileIds.filter(Boolean)
+    : [];
+
+  const or = [];
+  if (includeOwnUploads) or.push({ uploadedBy: user._id });
+  if (allowedIds.length) or.push({ _id: { $in: allowedIds } });
+  if (!or.length) return { _id: null };
+  return { $or: or };
+};
+
 export const uploadExcelFile = async (req, res) => {
   if (!req.file) return res.status(400).json({ message: "Excel file is required" });
 
@@ -23,14 +49,17 @@ export const uploadExcelFile = async (req, res) => {
 };
 
 export const listFileSheets = async (req, res) => {
-  const files = await FileSheet.find()
+  const files = await FileSheet.find(getAccessibleFileFilter(req.user))
     .select("fileName originalName sheetName headers createdAt updatedAt")
     .sort({ createdAt: -1 });
   res.json(files);
 };
 
 export const getFileSheet = async (req, res) => {
-  const file = await FileSheet.findById(req.params.id);
+  const file = await FileSheet.findOne({
+    _id: req.params.id,
+    ...getAccessibleFileFilter(req.user)
+  });
   if (!file) return res.status(404).json({ message: "File not found" });
   res.json(file);
 };
@@ -38,7 +67,10 @@ export const getFileSheet = async (req, res) => {
 export const updateCell = async (req, res) => {
   const { id } = req.params;
   const { rowIndex, column, value } = req.body;
-  const file = await FileSheet.findById(id);
+  const file = await FileSheet.findOne({
+    _id: id,
+    ...getAccessibleFileFilter(req.user)
+  });
   if (!file) return res.status(404).json({ message: "File not found" });
 
   if (rowIndex < 0 || rowIndex >= file.rows.length) {
@@ -52,7 +84,10 @@ export const updateCell = async (req, res) => {
 
 export const addRow = async (req, res) => {
   const { id } = req.params;
-  const file = await FileSheet.findById(id);
+  const file = await FileSheet.findOne({
+    _id: id,
+    ...getAccessibleFileFilter(req.user)
+  });
   if (!file) return res.status(404).json({ message: "File not found" });
 
   const blankRow = Object.fromEntries((file.headers || []).map((header) => [header, ""]));
@@ -71,7 +106,10 @@ export const addColumn = async (req, res) => {
     return res.status(400).json({ message: "columnName is required" });
   }
 
-  const file = await FileSheet.findById(id);
+  const file = await FileSheet.findOne({
+    _id: id,
+    ...getAccessibleFileFilter(req.user)
+  });
   if (!file) return res.status(404).json({ message: "File not found" });
 
   const alreadyExists = (file.headers || []).includes(sanitizedColumnName);
@@ -92,7 +130,10 @@ export const addColumn = async (req, res) => {
 };
 
 export const downloadFileSheet = async (req, res) => {
-  const file = await FileSheet.findById(req.params.id);
+  const file = await FileSheet.findOne({
+    _id: req.params.id,
+    ...getAccessibleFileFilter(req.user)
+  });
   if (!file) return res.status(404).json({ message: "File not found" });
 
   const worksheet = XLSX.utils.json_to_sheet(file.rows || []);

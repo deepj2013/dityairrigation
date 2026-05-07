@@ -1,7 +1,42 @@
 import User from "../models/User.js";
 
+const permissionKeys = [
+  "canManageUsers",
+  "canManageFarmers",
+  "canManageVendors",
+  "canManageDealers",
+  "canManageGallery",
+  "canManageNotices",
+  "canExportData",
+  "canManageWebsite",
+  "canManageFiles"
+];
+
+const normalizePermissionValue = (value) => {
+  if (value === true || value === false) return value;
+  if (!value || typeof value !== "object") return false;
+  return {
+    visible: Boolean(value.visible),
+    read: Boolean(value.read || value.write),
+    write: Boolean(value.write)
+  };
+};
+
+const normalizePermissions = (permissions = {}) =>
+  Object.fromEntries(permissionKeys.map((key) => [key, normalizePermissionValue(permissions?.[key])]));
+
+const normalizeFileAccess = (fileAccess = {}) => {
+  const ids = Array.isArray(fileAccess.allowedFileIds)
+    ? fileAccess.allowedFileIds.map((id) => String(id || "").trim()).filter(Boolean)
+    : [];
+  return {
+    includeOwnUploads: fileAccess.includeOwnUploads !== false,
+    allowedFileIds: [...new Set(ids)]
+  };
+};
+
 export const createUser = async (req, res) => {
-  const { name, mobile, password, role, permissions, isActive } = req.body;
+  const { name, mobile, password, role, permissions, isActive, fileAccess } = req.body;
   if (!name || !mobile || !password || !role) {
     return res.status(400).json({ message: "name, mobile, password, role are required" });
   }
@@ -14,7 +49,8 @@ export const createUser = async (req, res) => {
     mobile,
     password,
     role,
-    permissions: permissions || {},
+    permissions: normalizePermissions(permissions || {}),
+    fileAccess: normalizeFileAccess(fileAccess || {}),
     isActive: isActive ?? true
   });
 
@@ -37,7 +73,8 @@ export const updateUser = async (req, res) => {
     name: req.body.name,
     mobile: req.body.mobile,
     role: req.body.role,
-    permissions: req.body.permissions,
+    permissions: req.body.permissions ? normalizePermissions(req.body.permissions) : undefined,
+    fileAccess: req.body.fileAccess ? normalizeFileAccess(req.body.fileAccess) : undefined,
     isActive: req.body.isActive
   };
 

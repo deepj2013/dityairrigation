@@ -3,13 +3,15 @@ import bcrypt from "bcryptjs";
 
 const permissionSchema = new mongoose.Schema(
   {
-    canManageUsers: { type: Boolean, default: false },
-    canManageFarmers: { type: Boolean, default: true },
-    canManageGallery: { type: Boolean, default: false },
-    canManageNotices: { type: Boolean, default: false },
-    canExportData: { type: Boolean, default: false },
-    canManageWebsite: { type: Boolean, default: false },
-    canManageFiles: { type: Boolean, default: false }
+    canManageUsers: { type: mongoose.Schema.Types.Mixed, default: false },
+    canManageFarmers: { type: mongoose.Schema.Types.Mixed, default: true },
+    canManageVendors: { type: mongoose.Schema.Types.Mixed, default: false },
+    canManageDealers: { type: mongoose.Schema.Types.Mixed, default: false },
+    canManageGallery: { type: mongoose.Schema.Types.Mixed, default: false },
+    canManageNotices: { type: mongoose.Schema.Types.Mixed, default: false },
+    canExportData: { type: mongoose.Schema.Types.Mixed, default: false },
+    canManageWebsite: { type: mongoose.Schema.Types.Mixed, default: false },
+    canManageFiles: { type: mongoose.Schema.Types.Mixed, default: false }
   },
   { _id: false }
 );
@@ -25,7 +27,11 @@ const userSchema = new mongoose.Schema(
       required: true
     },
     isActive: { type: Boolean, default: true },
-    permissions: { type: permissionSchema, default: () => ({}) }
+    permissions: { type: permissionSchema, default: () => ({}) },
+    fileAccess: {
+      includeOwnUploads: { type: Boolean, default: true },
+      allowedFileIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "FileSheet" }]
+    }
   },
   { timestamps: true }
 );

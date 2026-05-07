@@ -1,6 +1,15 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
+const hasAccess = (permissionValue, accessType) => {
+  if (permissionValue === true) return true;
+  if (!permissionValue || typeof permissionValue !== "object") return false;
+
+  const canRead = Boolean(permissionValue.read || permissionValue.write);
+  const canWrite = Boolean(permissionValue.write);
+  return accessType === "write" ? canWrite : canRead;
+};
+
 export const protect = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization || "";
@@ -25,8 +34,8 @@ export const authorize = (...roles) => (req, res, next) => {
   next();
 };
 
-export const requirePermission = (permissionKey) => (req, res, next) => {
+export const requirePermission = (permissionKey, accessType = "read") => (req, res, next) => {
   if (req.user.role === "UNIVERSAL_ADMIN") return next();
-  if (req.user.permissions?.[permissionKey]) return next();
+  if (hasAccess(req.user.permissions?.[permissionKey], accessType)) return next();
   return res.status(403).json({ message: "Permission denied" });
 };

@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
+import RichTextEditor from "../components/RichTextEditor";
+import { isNoticeContentEmpty, NOTICE_EDITOR_HELP, renderNoticeContent } from "../utils/noticeFormatter";
 
 const farmerFields = [
   { key: "क्रमांक", label: "क्रमांक" },
@@ -34,16 +37,40 @@ const farmerFields = [
 ];
 
 const permissionKeys = [
-  { key: "canManageUsers", label: "यूज़र प्रबंधन" },
-  { key: "canManageFarmers", label: "किसान प्रबंधन" },
-  { key: "canManageGallery", label: "गैलरी प्रबंधन" },
-  { key: "canManageNotices", label: "सूचना प्रबंधन" },
-  { key: "canExportData", label: "डेटा एक्सपोर्ट" },
-  { key: "canManageWebsite", label: "वेबसाइट प्रबंधन" },
-  { key: "canManageFiles", label: "फ़ाइल प्रबंधन" }
+  { key: "canManageUsers", labelHi: "यूज़र प्रबंधन", labelEn: "User Management" },
+  {
+    key: "canManageFarmers",
+    labelHi: "किसान पंजीयन",
+    labelEn: "Farmer Registration"
+  },
+  { key: "canManageVendors", labelHi: "कंपनी विक्रेता सूची", labelEn: "Company Vendor List" },
+  { key: "canManageDealers", labelHi: "डीलर फॉर्म और सूची", labelEn: "Dealer Forms and List" },
+  { key: "canManageGallery", labelHi: "हीरो इमेज गैलरी", labelEn: "Hero Image Gallery" },
+  { key: "canManageNotices", labelHi: "नोटिफिकेशन प्रबंधन", labelEn: "Notification Management" },
+  { key: "canExportData", labelHi: "डेटा एक्सपोर्ट", labelEn: "Data Export" },
+  { key: "canManageWebsite", labelHi: "वेबसाइट कंटेंट", labelEn: "Website Content" },
+  { key: "canManageFiles", labelHi: "फ़ाइल", labelEn: "File" }
 ];
 
-const emptyPermissions = Object.fromEntries(permissionKeys.map((item) => [item.key, false]));
+const defaultPermissionSetting = { visible: false, read: false, write: false };
+const emptyPermissions = Object.fromEntries(permissionKeys.map((item) => [item.key, { ...defaultPermissionSetting }]));
+
+const normalizePermissionSetting = (value) => {
+  if (value === true) return { visible: true, read: true, write: true };
+  if (!value || typeof value !== "object") return { ...defaultPermissionSetting };
+  return {
+    visible: Boolean(value.visible || value.read || value.write),
+    read: Boolean(value.read || value.write),
+    write: Boolean(value.write)
+  };
+};
+
+const hasPermissionAccess = (value, access = "read") => {
+  const normalized = normalizePermissionSetting(value);
+  if (access === "visible") return normalized.visible;
+  if (access === "write") return normalized.write;
+  return normalized.read;
+};
 const emptyFarmerForm = Object.fromEntries(farmerFields.map((field) => [field.key, ""]));
 
 const romanToHindi = (value) => {
@@ -110,6 +137,8 @@ const romanToHindi = (value) => {
 };
 
 function DashboardPage() {
+  const { i18n } = useTranslation();
+  const isHindi = i18n.language !== "en";
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem("user") || "null");
   const [menu, setMenu] = useState("farmer");
@@ -129,6 +158,7 @@ function DashboardPage() {
   const [dealerFormData, setDealerFormData] = useState(emptyFarmerForm);
   const [editDealerData, setEditDealerData] = useState(emptyFarmerForm);
   const [files, setFiles] = useState([]);
+  const [permissionFiles, setPermissionFiles] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [downloadingUpdatedFile, setDownloadingUpdatedFile] = useState(false);
@@ -143,32 +173,174 @@ function DashboardPage() {
     password: "",
     role: "ADMIN",
     isActive: true,
-    permissions: { ...emptyPermissions, canManageFarmers: true }
+    permissions: {
+      ...emptyPermissions,
+      canManageFarmers: { visible: true, read: true, write: true }
+    },
+    fileAccess: { includeOwnUploads: true, allowedFileIds: [] }
   });
   const [editUser, setEditUser] = useState({
     name: "",
     mobile: "",
     role: "ADMIN",
     isActive: true,
-    permissions: { ...emptyPermissions }
+    permissions: { ...emptyPermissions },
+    fileAccess: { includeOwnUploads: true, allowedFileIds: [] }
   });
   const [newPassword, setNewPassword] = useState("");
+  const [notices, setNotices] = useState([]);
+  const [noticeForm, setNoticeForm] = useState({
+    titleHi: "",
+    titleEn: "",
+    descriptionHi: "",
+    descriptionEn: "",
+    isActive: true,
+    image: null
+  });
+  const [uploadingNotice, setUploadingNotice] = useState(false);
+  const [websiteContent, setWebsiteContent] = useState([]);
+  const [heroGallery, setHeroGallery] = useState([]);
+  const [websiteForm, setWebsiteForm] = useState({
+    section: "ABOUT",
+    titleHi: "",
+    titleEn: "",
+    descriptionHi: "",
+    descriptionEn: "",
+    order: 1,
+    isActive: true,
+    image: null,
+    meta: { name: "", mobile: "", email: "", address: "", whatsapp: "" }
+  });
+  const [editingWebsiteId, setEditingWebsiteId] = useState("");
+  const [uploadingWebsite, setUploadingWebsite] = useState(false);
+  const ui = useMemo(
+    () =>
+      isHindi
+        ? {
+            dashboardTitle: "DITYA IRRIGATION डैशबोर्ड",
+            dashboardSubtitle: "यूज़र, फॉर्म और अनुमतियों का प्रबंधन",
+            logout: "लॉगआउट",
+            menuTitle: "मुख्य मेनू",
+            users: "यूज़र प्रबंधन",
+            farmer: "किसान पंजीयन",
+            vendor: "कंपनी विक्रेता सूची",
+            dealer: "डीलर फॉर्म और सूची",
+            notice: "नोटिफिकेशन प्रबंधन",
+            website: "वेबसाइट कंटेंट",
+            file: "फ़ाइल",
+            noticeHeading: "पब्लिक नोटिफिकेशन प्रबंधन",
+            noticeCreate: "नया नोटिफिकेशन बनाएं",
+            titleHi: "Title (Hindi) - optional",
+            titleEn: "Title (English) - optional",
+            descriptionHi: "Description (Hindi)",
+            descriptionEn: "Description (English)",
+            activeNow: "अभी Active रखें",
+            optionalImage: "Optional image",
+            saveNotice: "नोटिफिकेशन सेव करें",
+            saving: "सेव हो रहा...",
+            status: "Status",
+            action: "Action",
+            menuVisible: "Menu",
+            read: "Read",
+            write: "Write",
+            ownUploads: "Own uploads",
+            specificFiles: "Specific file access",
+            english: "English",
+            hindi: "हिंदी"
+          }
+        : {
+            dashboardTitle: "DITYA IRRIGATION Dashboard",
+            dashboardSubtitle: "Manage users, forms and permissions",
+            logout: "Logout",
+            menuTitle: "Main Menu",
+            users: "User Management",
+            farmer: "Farmer Registration",
+            vendor: "Company Vendor List",
+            dealer: "Dealer Forms and List",
+            notice: "Notification Management",
+            website: "Website Content",
+            file: "File",
+            noticeHeading: "Public Notification Management",
+            noticeCreate: "Create New Notification",
+            titleHi: "Title (Hindi) - optional",
+            titleEn: "Title (English) - optional",
+            descriptionHi: "Description (Hindi)",
+            descriptionEn: "Description (English)",
+            activeNow: "Keep Active",
+            optionalImage: "Optional image",
+            saveNotice: "Save Notification",
+            saving: "Saving...",
+            status: "Status",
+            action: "Action",
+            menuVisible: "Menu",
+            read: "Read",
+            write: "Write",
+            ownUploads: "Own uploads",
+            specificFiles: "Specific file access",
+            english: "English",
+            hindi: "हिंदी"
+          },
+    [isHindi]
+  );
 
   const menuItems = useMemo(
     () => [
-      { key: "users", label: "यूज़र प्रबंधन", show: user?.role === "UNIVERSAL_ADMIN" },
-      { key: "farmer", label: "किसान पंजीयन", show: true },
-      { key: "vendor", label: "कंपनी विक्रेता सूची", show: true },
-      { key: "dealer", label: "डीलर फॉर्म और सूची", show: true },
-      { key: "file", label: "फ़ाइल", show: user?.role === "UNIVERSAL_ADMIN" || user?.permissions?.canManageFiles }
+      { key: "users", label: ui.users, show: user?.role === "UNIVERSAL_ADMIN" },
+      {
+        key: "farmer",
+        label: ui.farmer,
+        show:
+          user?.role === "UNIVERSAL_ADMIN" ||
+          (hasPermissionAccess(user?.permissions?.canManageFarmers, "visible") &&
+            hasPermissionAccess(user?.permissions?.canManageFarmers, "read"))
+      },
+      {
+        key: "vendor",
+        label: ui.vendor,
+        show:
+          user?.role === "UNIVERSAL_ADMIN" ||
+          (hasPermissionAccess(user?.permissions?.canManageVendors, "visible") &&
+            hasPermissionAccess(user?.permissions?.canManageVendors, "read"))
+      },
+      {
+        key: "dealer",
+        label: ui.dealer,
+        show:
+          user?.role === "UNIVERSAL_ADMIN" ||
+          (hasPermissionAccess(user?.permissions?.canManageDealers, "visible") &&
+            hasPermissionAccess(user?.permissions?.canManageDealers, "read"))
+      },
+      {
+        key: "notice",
+        label: ui.notice,
+        show:
+          user?.role === "UNIVERSAL_ADMIN" ||
+          (hasPermissionAccess(user?.permissions?.canManageNotices, "visible") &&
+            hasPermissionAccess(user?.permissions?.canManageNotices, "read"))
+      },
+      {
+        key: "website",
+        label: ui.website,
+        show:
+          user?.role === "UNIVERSAL_ADMIN" ||
+          (hasPermissionAccess(user?.permissions?.canManageWebsite, "visible") &&
+            hasPermissionAccess(user?.permissions?.canManageWebsite, "read"))
+      },
+      {
+        key: "file",
+        label: ui.file,
+        show:
+          user?.role === "UNIVERSAL_ADMIN" ||
+          (hasPermissionAccess(user?.permissions?.canManageFiles, "visible") &&
+            hasPermissionAccess(user?.permissions?.canManageFiles, "read"))
+      }
     ].filter((item) => item.show),
-    [user]
+    [ui, user]
   );
 
-  if (!user) {
-    navigate("/login");
-    return null;
-  }
+  useEffect(() => {
+    if (!user) navigate("/login");
+  }, [navigate, user]);
 
   const logout = () => {
     localStorage.removeItem("token");
@@ -294,7 +466,7 @@ function DashboardPage() {
     }
   };
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     if (user?.role !== "UNIVERSAL_ADMIN") return;
     setLoadingUsers(true);
     try {
@@ -303,14 +475,36 @@ function DashboardPage() {
     } finally {
       setLoadingUsers(false);
     }
+  }, [user?.role]);
+
+  const fetchNotices = async () => {
+    const { data } = await api.get("/public/notice");
+    setNotices(data);
+  };
+
+  const fetchPermissionFiles = useCallback(async () => {
+    if (user?.role !== "UNIVERSAL_ADMIN") return;
+    const { data } = await api.get("/files");
+    setPermissionFiles(data);
+  }, [user?.role]);
+
+  const fetchWebsiteData = async () => {
+    const [contentRes, galleryRes] = await Promise.all([api.get("/public/content"), api.get("/public/gallery")]);
+    setWebsiteContent(contentRes.data || []);
+    setHeroGallery(galleryRes.data || []);
   };
 
   useEffect(() => {
-    if (menu === "users") fetchUsers();
+    if (menu === "users") {
+      fetchUsers();
+      fetchPermissionFiles();
+    }
     if (menu === "farmer") fetchFarmerForms();
     if (menu === "dealer") fetchDealerForms();
+    if (menu === "notice") fetchNotices();
+    if (menu === "website") fetchWebsiteData();
     if (menu === "file") fetchFiles();
-  }, [menu]);
+  }, [fetchPermissionFiles, fetchUsers, menu]);
 
   const fetchFiles = async () => {
     const { data } = await api.get("/files");
@@ -385,14 +579,42 @@ function DashboardPage() {
     }
   };
 
-  const togglePermission = (setter, permissionKey) => {
+  const togglePermissionAccess = (setter, permissionKey, accessKey) => {
     setter((prev) => ({
       ...prev,
       permissions: {
         ...prev.permissions,
-        [permissionKey]: !prev.permissions?.[permissionKey]
+        [permissionKey]: (() => {
+          const current = normalizePermissionSetting(prev.permissions?.[permissionKey]);
+          const nextValue = !current[accessKey];
+          const next = { ...current, [accessKey]: nextValue };
+
+          if (accessKey === "write" && next.write) {
+            next.read = true;
+          }
+
+          if (accessKey === "read" && !next.read) {
+            next.write = false;
+          }
+
+          return next;
+        })()
       }
     }));
+  };
+
+  const toggleAllowedFile = (setter, fileId) => {
+    setter((prev) => {
+      const selected = prev.fileAccess?.allowedFileIds || [];
+      const next = selected.includes(fileId) ? selected.filter((id) => id !== fileId) : [...selected, fileId];
+      return {
+        ...prev,
+        fileAccess: {
+          includeOwnUploads: prev.fileAccess?.includeOwnUploads !== false,
+          allowedFileIds: next
+        }
+      };
+    });
   };
 
   const createUser = async (event) => {
@@ -406,7 +628,11 @@ function DashboardPage() {
       password: "",
       role: "ADMIN",
       isActive: true,
-      permissions: { ...emptyPermissions, canManageFarmers: true }
+      permissions: {
+        ...emptyPermissions,
+        canManageFarmers: { visible: true, read: true, write: true }
+      },
+      fileAccess: { includeOwnUploads: true, allowedFileIds: [] }
     });
     fetchUsers();
   };
@@ -418,7 +644,16 @@ function DashboardPage() {
       mobile: selectedUser.mobile || "",
       role: selectedUser.role || "ADMIN",
       isActive: Boolean(selectedUser.isActive),
-      permissions: { ...emptyPermissions, ...(selectedUser.permissions || {}) }
+      permissions: Object.fromEntries(
+        permissionKeys.map((permissionItem) => [
+          permissionItem.key,
+          normalizePermissionSetting(selectedUser.permissions?.[permissionItem.key])
+        ])
+      ),
+      fileAccess: {
+        includeOwnUploads: selectedUser.fileAccess?.includeOwnUploads !== false,
+        allowedFileIds: selectedUser.fileAccess?.allowedFileIds || []
+      }
     });
     setNewPassword("");
   };
@@ -465,20 +700,170 @@ function DashboardPage() {
     setStatusMessage("पासवर्ड सफलतापूर्वक अपडेट हो गया है।");
   };
 
+  const createNotice = async (event) => {
+    event.preventDefault();
+    if (isNoticeContentEmpty(noticeForm.descriptionHi) && isNoticeContentEmpty(noticeForm.descriptionEn)) {
+      setStatusMessage("नोटिफिकेशन में Hindi या English विवरण में से कम से कम एक जरूरी है।");
+      return;
+    }
+
+    const payload = new FormData();
+    payload.append("titleHi", noticeForm.titleHi);
+    payload.append("titleEn", noticeForm.titleEn);
+    payload.append("descriptionHi", noticeForm.descriptionHi);
+    payload.append("descriptionEn", noticeForm.descriptionEn);
+    payload.append("isActive", String(noticeForm.isActive));
+    if (noticeForm.image) payload.append("image", noticeForm.image);
+
+    setUploadingNotice(true);
+    try {
+      await api.post("/public/notice", payload, {
+        headers: { "Content-Type": "multipart/form-data" }
+      });
+      setStatusMessage("नोटिफिकेशन सेव हो गया है।");
+      setNoticeForm({
+        titleHi: "",
+        titleEn: "",
+        descriptionHi: "",
+        descriptionEn: "",
+        isActive: true,
+        image: null
+      });
+      fetchNotices();
+    } finally {
+      setUploadingNotice(false);
+    }
+  };
+
+  const toggleNoticeStatus = async (item) => {
+    await api.patch(`/public/notice/${item._id}`, { isActive: !item.isActive });
+    setStatusMessage(`नोटिफिकेशन ${item.isActive ? "Inactive" : "Active"} कर दिया गया है।`);
+    fetchNotices();
+  };
+
+  const deleteNotice = async (id) => {
+    await api.delete(`/public/notice/${id}`);
+    setStatusMessage("नोटिफिकेशन डिलीट कर दिया गया है।");
+    fetchNotices();
+  };
+
+  const saveWebsiteContent = async (event) => {
+    event.preventDefault();
+    const payload = new FormData();
+    payload.append("section", websiteForm.section);
+    payload.append("titleHi", websiteForm.titleHi);
+    payload.append("titleEn", websiteForm.titleEn);
+    payload.append("descriptionHi", websiteForm.descriptionHi);
+    payload.append("descriptionEn", websiteForm.descriptionEn);
+    payload.append("order", String(websiteForm.order || 1));
+    payload.append("isActive", String(websiteForm.isActive));
+    payload.append("meta", JSON.stringify(websiteForm.meta || {}));
+    if (websiteForm.image) payload.append("image", websiteForm.image);
+
+    setUploadingWebsite(true);
+    try {
+      if (editingWebsiteId) {
+        await api.patch(`/public/content/${editingWebsiteId}`, payload, {
+          headers: { "Content-Type": "multipart/form-data" }
+        });
+      } else {
+        await api.post("/public/content", payload, {
+          headers: { "Content-Type": "multipart/form-data" }
+        });
+      }
+
+      setWebsiteForm({
+        section: "ABOUT",
+        titleHi: "",
+        titleEn: "",
+        descriptionHi: "",
+        descriptionEn: "",
+        order: 1,
+        isActive: true,
+        image: null,
+        meta: { name: "", mobile: "", email: "", address: "", whatsapp: "" }
+      });
+      setEditingWebsiteId("");
+      setStatusMessage("Website content saved.");
+      fetchWebsiteData();
+    } finally {
+      setUploadingWebsite(false);
+    }
+  };
+
+  const startEditWebsiteContent = (item) => {
+    setEditingWebsiteId(item._id);
+    setWebsiteForm({
+      section: item.section || "ABOUT",
+      titleHi: item.titleHi || "",
+      titleEn: item.titleEn || "",
+      descriptionHi: item.descriptionHi || "",
+      descriptionEn: item.descriptionEn || "",
+      order: item.order || 1,
+      isActive: Boolean(item.isActive),
+      image: null,
+      meta: {
+        name: item.meta?.name || "",
+        mobile: item.meta?.mobile || "",
+        email: item.meta?.email || "",
+        address: item.meta?.address || "",
+        whatsapp: item.meta?.whatsapp || ""
+      }
+    });
+  };
+
+  const deleteWebsiteContent = async (id) => {
+    await api.delete(`/public/content/${id}`);
+    setStatusMessage("Website content deleted.");
+    fetchWebsiteData();
+  };
+
+  const toggleWebsiteContentStatus = async (item) => {
+    await api.patch(`/public/content/${item._id}`, { isActive: !item.isActive });
+    setStatusMessage("Website content status updated.");
+    fetchWebsiteData();
+  };
+
+  const uploadHeroImage = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const payload = new FormData();
+    payload.append("image", file);
+    payload.append("title", file.name);
+    await api.post("/public/gallery", payload, { headers: { "Content-Type": "multipart/form-data" } });
+    setStatusMessage("Hero image uploaded.");
+    fetchWebsiteData();
+    event.target.value = "";
+  };
+
+  const deleteHeroImage = async (id) => {
+    await api.delete(`/public/gallery/${id}`);
+    setStatusMessage("Hero image deleted.");
+    fetchWebsiteData();
+  };
+
   return (
     <div className="min-h-screen bg-slate-100">
       <header className="border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
           <div>
-            <h1 className="text-xl font-black text-slate-800">DITYA IRRIGATION डैशबोर्ड</h1>
-            <p className="text-xs text-slate-500">यूज़र, फॉर्म और अनुमतियों का प्रबंधन</p>
+            <h1 className="text-xl font-black text-slate-800">{ui.dashboardTitle}</h1>
+            <p className="text-xs text-slate-500">{ui.dashboardSubtitle}</p>
           </div>
-          <button onClick={logout} className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white">लॉगआउट</button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => i18n.changeLanguage(isHindi ? "en" : "hi")}
+              className="rounded-lg border border-emerald-300 px-4 py-2 text-sm font-semibold text-emerald-700"
+            >
+              {isHindi ? ui.english : ui.hindi}
+            </button>
+            <button onClick={logout} className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white">{ui.logout}</button>
+          </div>
         </div>
       </header>
       <div className="mx-auto grid w-[98vw] max-w-[1800px] gap-3 p-3 md:grid-cols-[250px_1fr] md:gap-4 md:p-4">
         <aside className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-          <p className="mb-3 px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">मुख्य मेनू</p>
+          <p className="mb-3 px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{ui.menuTitle}</p>
           {menuItems.map((item) => (
             <button
               key={item.key}
@@ -512,17 +897,64 @@ function DashboardPage() {
                   <input type="checkbox" checked={newUser.isActive} onChange={(e) => setNewUser((prev) => ({ ...prev, isActive: e.target.checked }))} />
                   सक्रिय (Active)
                 </label>
-                <div className="md:col-span-3 grid gap-2 md:grid-cols-3">
-                  {permissionKeys.map((item) => (
-                    <label key={item.key} className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white p-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(newUser.permissions[item.key])}
-                        onChange={() => togglePermission(setNewUser, item.key)}
-                      />
-                      {item.label}
-                    </label>
-                  ))}
+                <div className="md:col-span-3 rounded-lg border border-slate-300 bg-white p-2">
+                  <div className="mb-2 grid grid-cols-[1.4fr_repeat(3,minmax(0,1fr))] gap-2 px-1 text-xs font-semibold text-slate-500">
+                    <p>Menu</p>
+                    <p>{ui.menuVisible}</p>
+                    <p>{ui.read}</p>
+                    <p>{ui.write}</p>
+                  </div>
+                  <div className="space-y-2">
+                    {permissionKeys.map((item) => {
+                      const current = normalizePermissionSetting(newUser.permissions[item.key]);
+                      return (
+                        <div key={item.key} className="grid grid-cols-[1.4fr_repeat(3,minmax(0,1fr))] items-center gap-2 rounded border border-slate-200 p-2 text-sm">
+                          <p>{isHindi ? item.labelHi : item.labelEn}</p>
+                          <label className="flex items-center justify-center">
+                            <input type="checkbox" checked={current.visible} onChange={() => togglePermissionAccess(setNewUser, item.key, "visible")} />
+                          </label>
+                          <label className="flex items-center justify-center">
+                            <input type="checkbox" checked={current.read} onChange={() => togglePermissionAccess(setNewUser, item.key, "read")} />
+                          </label>
+                          <label className="flex items-center justify-center">
+                            <input type="checkbox" checked={current.write} onChange={() => togglePermissionAccess(setNewUser, item.key, "write")} />
+                          </label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="md:col-span-3 rounded-lg border border-slate-300 bg-white p-3">
+                  <p className="mb-2 text-sm font-semibold text-slate-700">{ui.specificFiles}</p>
+                  <label className="mb-2 flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={newUser.fileAccess?.includeOwnUploads !== false}
+                      onChange={(e) =>
+                        setNewUser((prev) => ({
+                          ...prev,
+                          fileAccess: {
+                            includeOwnUploads: e.target.checked,
+                            allowedFileIds: prev.fileAccess?.allowedFileIds || []
+                          }
+                        }))
+                      }
+                    />
+                    {ui.ownUploads}
+                  </label>
+                  <div className="grid max-h-40 gap-2 overflow-auto rounded border border-slate-200 p-2 md:grid-cols-2">
+                    {permissionFiles.map((fileItem) => (
+                      <label key={fileItem._id} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={(newUser.fileAccess?.allowedFileIds || []).includes(fileItem._id)}
+                          onChange={() => toggleAllowedFile(setNewUser, fileItem._id)}
+                        />
+                        <span className="truncate">{fileItem.fileName}</span>
+                      </label>
+                    ))}
+                    {permissionFiles.length === 0 ? <p className="text-xs text-slate-500">No file available.</p> : null}
+                  </div>
                 </div>
                 <button className="rounded-lg bg-emerald-600 p-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 md:col-span-3">यूज़र बनाएँ</button>
               </form>
@@ -542,17 +974,64 @@ function DashboardPage() {
                     सक्रिय (Active)
                   </label>
                   <input placeholder="नया पासवर्ड (optional)" type="password" className="rounded-lg border border-slate-300 p-2.5 text-sm md:col-span-2" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-                  <div className="md:col-span-3 grid gap-2 md:grid-cols-3">
-                    {permissionKeys.map((item) => (
-                      <label key={item.key} className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white p-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(editUser.permissions[item.key])}
-                          onChange={() => togglePermission(setEditUser, item.key)}
-                        />
-                        {item.label}
-                      </label>
-                    ))}
+                  <div className="md:col-span-3 rounded-lg border border-slate-300 bg-white p-2">
+                    <div className="mb-2 grid grid-cols-[1.4fr_repeat(3,minmax(0,1fr))] gap-2 px-1 text-xs font-semibold text-slate-500">
+                      <p>Menu</p>
+                      <p>{ui.menuVisible}</p>
+                      <p>{ui.read}</p>
+                      <p>{ui.write}</p>
+                    </div>
+                    <div className="space-y-2">
+                      {permissionKeys.map((item) => {
+                        const current = normalizePermissionSetting(editUser.permissions[item.key]);
+                        return (
+                          <div key={item.key} className="grid grid-cols-[1.4fr_repeat(3,minmax(0,1fr))] items-center gap-2 rounded border border-slate-200 p-2 text-sm">
+                            <p>{isHindi ? item.labelHi : item.labelEn}</p>
+                            <label className="flex items-center justify-center">
+                              <input type="checkbox" checked={current.visible} onChange={() => togglePermissionAccess(setEditUser, item.key, "visible")} />
+                            </label>
+                            <label className="flex items-center justify-center">
+                              <input type="checkbox" checked={current.read} onChange={() => togglePermissionAccess(setEditUser, item.key, "read")} />
+                            </label>
+                            <label className="flex items-center justify-center">
+                              <input type="checkbox" checked={current.write} onChange={() => togglePermissionAccess(setEditUser, item.key, "write")} />
+                            </label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="md:col-span-3 rounded-lg border border-slate-300 bg-white p-3">
+                    <p className="mb-2 text-sm font-semibold text-slate-700">{ui.specificFiles}</p>
+                    <label className="mb-2 flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={editUser.fileAccess?.includeOwnUploads !== false}
+                        onChange={(e) =>
+                          setEditUser((prev) => ({
+                            ...prev,
+                            fileAccess: {
+                              includeOwnUploads: e.target.checked,
+                              allowedFileIds: prev.fileAccess?.allowedFileIds || []
+                            }
+                          }))
+                        }
+                      />
+                      {ui.ownUploads}
+                    </label>
+                    <div className="grid max-h-40 gap-2 overflow-auto rounded border border-slate-200 p-2 md:grid-cols-2">
+                      {permissionFiles.map((fileItem) => (
+                        <label key={fileItem._id} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={(editUser.fileAccess?.allowedFileIds || []).includes(fileItem._id)}
+                            onChange={() => toggleAllowedFile(setEditUser, fileItem._id)}
+                          />
+                          <span className="truncate">{fileItem.fileName}</span>
+                        </label>
+                      ))}
+                      {permissionFiles.length === 0 ? <p className="text-xs text-slate-500">No file available.</p> : null}
+                    </div>
                   </div>
                   <div className="md:col-span-3 flex gap-2">
                     <button className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white">अपडेट सेव करें</button>
@@ -587,7 +1066,17 @@ function DashboardPage() {
                               {item.isActive ? "Active" : "Inactive"}
                             </span>
                           </td>
-                          <td className="border p-2">{permissionKeys.filter((perm) => item.permissions?.[perm.key]).map((perm) => perm.label).join(", ") || "-"}</td>
+                          <td className="border p-2">
+                            {permissionKeys
+                              .filter((perm) => hasPermissionAccess(item.permissions?.[perm.key], "visible"))
+                              .map((perm) => {
+                                const setting = normalizePermissionSetting(item.permissions?.[perm.key]);
+                                const label = isHindi ? perm.labelHi : perm.labelEn;
+                                const mode = setting.write ? "RW" : setting.read ? "R" : "-";
+                                return `${label}(${mode})`;
+                              })
+                              .join(", ") || "-"}
+                          </td>
                           <td className="border p-2">
                             <div className="flex flex-wrap gap-2">
                               <button type="button" onClick={() => startEdit(item)} className="rounded bg-blue-600 px-2 py-1 text-xs font-semibold text-white">Edit</button>
@@ -905,6 +1394,192 @@ function DashboardPage() {
             </div>
           )}
 
+          {menu === "website" && (
+            <div className="space-y-5">
+              <div className="rounded-xl border border-slate-200 p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-lg font-bold text-slate-800">Hero Images</h2>
+                  <label className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">
+                    Upload Hero Image
+                    <input type="file" accept="image/*" className="hidden" onChange={uploadHeroImage} />
+                  </label>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  {heroGallery.map((item) => (
+                    <div key={item._id} className="rounded-lg border border-slate-200 p-2">
+                      <img src={item.imageUrl} alt={item.title} className="h-32 w-full rounded object-cover" />
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <p className="truncate text-xs text-slate-600">{item.title}</p>
+                        <button type="button" onClick={() => deleteHeroImage(item._id)} className="rounded bg-rose-600 px-2 py-1 text-xs font-semibold text-white">Delete</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <form onSubmit={saveWebsiteContent} className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
+                <h3 className="text-base font-semibold text-slate-800 md:col-span-2">{editingWebsiteId ? "Update Website Content" : "Add Website Content"}</h3>
+                <select
+                  className="rounded-lg border border-slate-300 p-2.5 text-sm"
+                  value={websiteForm.section}
+                  onChange={(e) => setWebsiteForm((prev) => ({ ...prev, section: e.target.value }))}
+                >
+                  <option value="HOME">HOME</option>
+                  <option value="ABOUT">ABOUT</option>
+                  <option value="SERVICE">SERVICE</option>
+                  <option value="TOOL">TOOL</option>
+                  <option value="CONTACT">CONTACT</option>
+                </select>
+                <input
+                  type="number"
+                  min={1}
+                  className="rounded-lg border border-slate-300 p-2.5 text-sm"
+                  placeholder="Order"
+                  value={websiteForm.order}
+                  onChange={(e) => setWebsiteForm((prev) => ({ ...prev, order: Number(e.target.value) }))}
+                />
+                <input
+                  className="rounded-lg border border-slate-300 p-2.5 text-sm"
+                  placeholder="Title (Hindi)"
+                  value={websiteForm.titleHi}
+                  onChange={(e) => setWebsiteForm((prev) => ({ ...prev, titleHi: e.target.value }))}
+                />
+                <input
+                  className="rounded-lg border border-slate-300 p-2.5 text-sm"
+                  placeholder="Title (English)"
+                  value={websiteForm.titleEn}
+                  onChange={(e) => setWebsiteForm((prev) => ({ ...prev, titleEn: e.target.value }))}
+                />
+                <textarea
+                  rows={4}
+                  className="rounded-lg border border-slate-300 p-2.5 text-sm"
+                  placeholder="Description (Hindi)"
+                  value={websiteForm.descriptionHi}
+                  onChange={(e) => setWebsiteForm((prev) => ({ ...prev, descriptionHi: e.target.value }))}
+                />
+                <textarea
+                  rows={4}
+                  className="rounded-lg border border-slate-300 p-2.5 text-sm"
+                  placeholder="Description (English)"
+                  value={websiteForm.descriptionEn}
+                  onChange={(e) => setWebsiteForm((prev) => ({ ...prev, descriptionEn: e.target.value }))}
+                />
+                {websiteForm.section === "CONTACT" && (
+                  <div className="grid gap-2 rounded-lg border border-slate-300 bg-white p-3 md:col-span-2 md:grid-cols-2">
+                    <input
+                      className="rounded border p-2 text-sm"
+                      placeholder="Name"
+                      value={websiteForm.meta.name}
+                      onChange={(e) => setWebsiteForm((prev) => ({ ...prev, meta: { ...prev.meta, name: e.target.value } }))}
+                    />
+                    <input
+                      className="rounded border p-2 text-sm"
+                      placeholder="Mobile"
+                      value={websiteForm.meta.mobile}
+                      onChange={(e) => setWebsiteForm((prev) => ({ ...prev, meta: { ...prev.meta, mobile: e.target.value } }))}
+                    />
+                    <input
+                      className="rounded border p-2 text-sm"
+                      placeholder="Email"
+                      value={websiteForm.meta.email}
+                      onChange={(e) => setWebsiteForm((prev) => ({ ...prev, meta: { ...prev.meta, email: e.target.value } }))}
+                    />
+                    <input
+                      className="rounded border p-2 text-sm"
+                      placeholder="WhatsApp (country code + number)"
+                      value={websiteForm.meta.whatsapp}
+                      onChange={(e) => setWebsiteForm((prev) => ({ ...prev, meta: { ...prev.meta, whatsapp: e.target.value } }))}
+                    />
+                    <input
+                      className="rounded border p-2 text-sm md:col-span-2"
+                      placeholder="Address"
+                      value={websiteForm.meta.address}
+                      onChange={(e) => setWebsiteForm((prev) => ({ ...prev, meta: { ...prev.meta, address: e.target.value } }))}
+                    />
+                  </div>
+                )}
+                <label className="rounded-lg border border-slate-300 bg-white p-2.5 text-sm">
+                  Optional image
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="mt-2 block w-full text-xs"
+                    onChange={(e) => setWebsiteForm((prev) => ({ ...prev, image: e.target.files?.[0] || null }))}
+                  />
+                </label>
+                <label className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white p-2.5 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={websiteForm.isActive}
+                    onChange={(e) => setWebsiteForm((prev) => ({ ...prev, isActive: e.target.checked }))}
+                  />
+                  Active
+                </label>
+                <div className="flex gap-2 md:col-span-2">
+                  <button
+                    disabled={uploadingWebsite}
+                    className="rounded-lg bg-emerald-600 p-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+                  >
+                    {uploadingWebsite ? "Saving..." : editingWebsiteId ? "Update Content" : "Save Content"}
+                  </button>
+                  {editingWebsiteId ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingWebsiteId("");
+                        setWebsiteForm({
+                          section: "ABOUT",
+                          titleHi: "",
+                          titleEn: "",
+                          descriptionHi: "",
+                          descriptionEn: "",
+                          order: 1,
+                          isActive: true,
+                          image: null,
+                          meta: { name: "", mobile: "", email: "", address: "", whatsapp: "" }
+                        });
+                      }}
+                      className="rounded-lg bg-slate-500 p-2.5 text-sm font-semibold text-white"
+                    >
+                      Cancel Edit
+                    </button>
+                  ) : null}
+                </div>
+              </form>
+
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-100 text-slate-700">
+                    <tr>
+                      <th className="border p-2 text-left">Section</th>
+                      <th className="border p-2 text-left">Title</th>
+                      <th className="border p-2 text-left">Order</th>
+                      <th className="border p-2 text-left">Status</th>
+                      <th className="border p-2 text-left">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {websiteContent.map((item) => (
+                      <tr key={item._id} className="hover:bg-slate-50">
+                        <td className="border p-2">{item.section}</td>
+                        <td className="border p-2">{item.titleHi || item.titleEn || "-"}</td>
+                        <td className="border p-2">{item.order || "-"}</td>
+                        <td className="border p-2">{item.isActive ? "Active" : "Inactive"}</td>
+                        <td className="border p-2">
+                          <div className="flex flex-wrap gap-2">
+                            <button type="button" onClick={() => startEditWebsiteContent(item)} className="rounded bg-indigo-600 px-2 py-1 text-xs font-semibold text-white">Edit</button>
+                            <button type="button" onClick={() => toggleWebsiteContentStatus(item)} className="rounded bg-amber-600 px-2 py-1 text-xs font-semibold text-white">{item.isActive ? "Inactive" : "Active"}</button>
+                            <button type="button" onClick={() => deleteWebsiteContent(item._id)} className="rounded bg-rose-600 px-2 py-1 text-xs font-semibold text-white">Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {menu === "file" && (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -961,7 +1636,7 @@ function DashboardPage() {
                         </button>
                       </div>
                       <p className="text-xs text-slate-500">
-                        किसी भी cell में बदलाव करें; input छोड़ते ही data save हो जाएगा। फिर "अपडेटेड फ़ाइल डाउनलोड" से updated excel लें।
+                        किसी भी cell में बदलाव करें; input छोड़ते ही data save हो जाएगा। फिर &quot;अपडेटेड फ़ाइल डाउनलोड&quot; से updated excel लें।
                       </p>
                       <div className="max-h-[65vh] overflow-auto rounded border">
                         <table className="min-w-[860px] w-full text-xs md:text-sm">
@@ -994,6 +1669,142 @@ function DashboardPage() {
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+          {menu === "notice" && (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-xl font-bold text-slate-800">{ui.noticeHeading}</h2>
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">Dynamic + Active/Inactive</span>
+              </div>
+              {statusMessage && <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{statusMessage}</p>}
+
+              <form onSubmit={createNotice} className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
+                <h3 className="text-base font-semibold text-slate-800 md:col-span-2">{ui.noticeCreate}</h3>
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 md:col-span-2">
+                  <p className="font-semibold">Editor tools</p>
+                  <p className="mt-1 whitespace-pre-line">{NOTICE_EDITOR_HELP}</p>
+                </div>
+                <input
+                  placeholder={ui.titleHi}
+                  className="rounded-lg border border-slate-300 p-2.5 text-sm"
+                  value={noticeForm.titleHi}
+                  onChange={(e) => setNoticeForm((prev) => ({ ...prev, titleHi: e.target.value }))}
+                />
+                <input
+                  placeholder={ui.titleEn}
+                  className="rounded-lg border border-slate-300 p-2.5 text-sm"
+                  value={noticeForm.titleEn}
+                  onChange={(e) => setNoticeForm((prev) => ({ ...prev, titleEn: e.target.value }))}
+                />
+                <RichTextEditor
+                  value={noticeForm.descriptionHi}
+                  onChange={(html) => setNoticeForm((prev) => ({ ...prev, descriptionHi: html }))}
+                  placeholder={ui.descriptionHi}
+                />
+                <RichTextEditor
+                  value={noticeForm.descriptionEn}
+                  onChange={(html) => setNoticeForm((prev) => ({ ...prev, descriptionEn: html }))}
+                  placeholder={ui.descriptionEn}
+                />
+                <label className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white p-2.5 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={noticeForm.isActive}
+                    onChange={(e) => setNoticeForm((prev) => ({ ...prev, isActive: e.target.checked }))}
+                  />
+                  {ui.activeNow}
+                </label>
+                <label className="rounded-lg border border-slate-300 bg-white p-2.5 text-sm">
+                  {ui.optionalImage}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="mt-2 block w-full text-xs"
+                    onChange={(e) => setNoticeForm((prev) => ({ ...prev, image: e.target.files?.[0] || null }))}
+                  />
+                </label>
+                <button
+                  disabled={uploadingNotice}
+                  className="rounded-lg bg-emerald-600 p-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60 md:col-span-2"
+                >
+                  {uploadingNotice ? ui.saving : ui.saveNotice}
+                </button>
+              </form>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                  <h4 className="text-sm font-semibold text-slate-700">Hindi preview</h4>
+                  <div className="mt-2 space-y-2 text-sm leading-7 text-slate-800">
+                    {noticeForm.titleHi ? <p className="text-lg font-bold text-red-600">{noticeForm.titleHi}</p> : null}
+                    {isNoticeContentEmpty(noticeForm.descriptionHi) ? <p>Preview will appear here...</p> : renderNoticeContent(noticeForm.descriptionHi)}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                  <h4 className="text-sm font-semibold text-slate-700">English preview</h4>
+                  <div className="mt-2 space-y-2 text-sm leading-7 text-slate-800">
+                    {noticeForm.titleEn ? <p className="text-lg font-bold text-red-600">{noticeForm.titleEn}</p> : null}
+                    {isNoticeContentEmpty(noticeForm.descriptionEn) ? <p>Preview will appear here...</p> : renderNoticeContent(noticeForm.descriptionEn)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-100 text-slate-700">
+                    <tr>
+                      <th className="border p-2 text-left">Title</th>
+                      <th className="border p-2 text-left">Description</th>
+                      <th className="border p-2 text-left">Image</th>
+                      <th className="border p-2 text-left">{ui.status}</th>
+                      <th className="border p-2 text-left">{ui.action}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {notices.length === 0 ? (
+                      <tr>
+                        <td className="border p-3 text-slate-500" colSpan={5}>कोई नोटिफिकेशन नहीं मिला।</td>
+                      </tr>
+                    ) : (
+                      notices.map((item) => (
+                        <tr key={item._id} className="hover:bg-slate-50">
+                          <td className="border p-2">{item.titleHi || item.titleEn || "-"}</td>
+                          <td className="border p-2">{item.descriptionHi || item.descriptionEn || "-"}</td>
+                          <td className="border p-2">
+                            {item.imageUrl ? (
+                              <a href={item.imageUrl} target="_blank" rel="noreferrer" className="text-emerald-700 underline">View</a>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                          <td className="border p-2">
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${item.isActive ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
+                              {item.isActive ? "Active" : "Inactive"}
+                            </span>
+                          </td>
+                          <td className="border p-2">
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => toggleNoticeStatus(item)}
+                                className={`rounded px-2 py-1 text-xs font-semibold text-white ${item.isActive ? "bg-amber-600" : "bg-emerald-600"}`}
+                              >
+                                {item.isActive ? "Inactive करें" : "Active करें"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteNotice(item._id)}
+                                className="rounded bg-rose-600 px-2 py-1 text-xs font-semibold text-white"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

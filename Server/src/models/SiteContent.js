@@ -15,6 +15,7 @@ const siteContentSchema = new mongoose.Schema(
     ctaLabelHi: { type: String, default: "" },
     ctaLabelEn: { type: String, default: "" },
     ctaLink: { type: String, default: "" },
+    meta: { type: mongoose.Schema.Types.Mixed, default: {} },
     isActive: { type: Boolean, default: true },
     order: { type: Number, default: 0 },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true }

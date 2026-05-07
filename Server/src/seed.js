@@ -20,6 +20,8 @@ const run = async () => {
       permissions: {
         canManageUsers: true,
         canManageFarmers: true,
+        canManageVendors: true,
+        canManageDealers: true,
         canManageGallery: true,
         canManageNotices: true,
         canExportData: true,
@@ -34,6 +36,8 @@ const run = async () => {
       ...adminUser.permissions?.toObject?.(),
       canManageUsers: true,
       canManageFarmers: true,
+      canManageVendors: true,
+      canManageDealers: true,
       canManageGallery: true,
       canManageNotices: true,
       canExportData: true,
