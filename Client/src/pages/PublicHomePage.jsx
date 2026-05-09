@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { renderNoticeContent } from "../utils/noticeFormatter";
+import { isNoticeContentEmpty, renderNoticeContent } from "../utils/noticeFormatter";
 import pvcPipeImage from "../assets/WhatsApp Image 2026-05-06 at 3.04.03 PM.jpeg";
 import sprinklerPipeImage from "../assets/irrigation-sprinklers-500x500.webp";
 import miniSprinklerImage from "../assets/1718112762-13-dec-23.jpg";
@@ -201,6 +201,14 @@ function PublicHomePage() {
     "https://images.unsplash.com/photo-1592982537447-7440770cbfc9";
   const contact = useMemo(() => STATIC_HINDI_CONTENT.contact, []);
   const activeNotice = notices[noticeIndex];
+  const noticeTitle = (isHindi ? activeNotice?.titleHi : activeNotice?.titleEn) || activeNotice?.titleHi || activeNotice?.titleEn || "";
+  const noticeBodyRaw =
+    (isHindi ? activeNotice?.descriptionHi : activeNotice?.descriptionEn) ||
+    activeNotice?.descriptionHi ||
+    activeNotice?.descriptionEn ||
+    "";
+  const hasNoticeText = Boolean(noticeTitle?.trim()) || !isNoticeContentEmpty(noticeBodyRaw);
+  const noticeImageOnly = Boolean(activeNotice?.imageUrl) && !hasNoticeText;
   const dynamicAbout = data.about?.[0];
   const dynamicServices = data.services || [];
   const dynamicTools = data.tools || [];
@@ -261,10 +269,18 @@ function PublicHomePage() {
     <div className="min-h-screen bg-slate-50">
       {showIntroBanner && activeNotice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl md:p-6">
+          <div
+            className={`relative max-h-[92vh] w-full overflow-y-auto rounded-2xl bg-white shadow-2xl ${
+              noticeImageOnly ? "max-w-4xl p-0" : "max-w-2xl p-5 md:p-6"
+            }`}
+          >
             <button
               onClick={() => setShowIntroBanner(false)}
-              className="absolute right-3 top-3 rounded-full border border-slate-300 px-2 py-1 text-xs font-bold text-slate-600"
+              className={`absolute right-3 top-3 z-20 rounded-full border px-2 py-1 text-xs font-bold shadow-sm ${
+                noticeImageOnly
+                  ? "border-white/80 bg-black/50 text-white"
+                  : "border-slate-300 bg-white text-slate-600"
+              }`}
             >
               X
             </button>
@@ -274,26 +290,32 @@ function PublicHomePage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, ease: "easeOut" }}
             >
-              {(isHindi ? activeNotice.titleHi : activeNotice.titleEn) && (
-                <h2 className="mb-4 text-center text-2xl font-black text-red-600">
-                  {isHindi ? activeNotice.titleHi : activeNotice.titleEn}
-                </h2>
-              )}
-              <div className="space-y-2 text-lg leading-8 text-green-700">
-                {renderNoticeContent(
-                  (isHindi ? activeNotice.descriptionHi : activeNotice.descriptionEn) ||
-                    activeNotice.descriptionHi ||
-                    activeNotice.descriptionEn
-                )}
-              </div>
-              {activeNotice.imageUrl && (
-                <div className="mt-5 flex max-h-[44vh] min-h-[220px] items-center justify-center overflow-hidden rounded-xl bg-slate-100 p-2">
+              {noticeImageOnly && activeNotice.imageUrl ? (
+                <div className="relative flex w-full justify-center rounded-2xl bg-slate-100 py-2">
                   <img
                     src={activeNotice.imageUrl}
-                    alt={isHindi ? activeNotice.titleHi || "सूचना" : activeNotice.titleEn || "Notification"}
-                    className="h-full max-h-[40vh] w-full object-contain"
+                    alt="सूचना"
+                    className="mx-auto block h-auto max-h-[85vh] w-auto max-w-full object-contain"
                   />
                 </div>
+              ) : (
+                <>
+                  {noticeTitle ? (
+                    <h2 className="mb-4 text-center text-2xl font-black text-red-600">{noticeTitle}</h2>
+                  ) : null}
+                  {!isNoticeContentEmpty(noticeBodyRaw) ? (
+                    <div className="space-y-2 text-lg leading-8 text-green-700">{renderNoticeContent(noticeBodyRaw)}</div>
+                  ) : null}
+                  {activeNotice.imageUrl ? (
+                    <div className="mt-5 flex w-full justify-center rounded-xl bg-slate-100 py-2">
+                      <img
+                        src={activeNotice.imageUrl}
+                        alt={noticeTitle || "सूचना"}
+                        className="mx-auto block h-auto max-h-[min(70vh,520px)] w-auto max-w-full object-contain"
+                      />
+                    </div>
+                  ) : null}
+                </>
               )}
             </motion.div>
             {notices.length > 1 && (

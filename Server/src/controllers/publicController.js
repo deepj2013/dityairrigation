@@ -1,10 +1,20 @@
 import Notice from "../models/Notice.js";
 import GalleryImage from "../models/GalleryImage.js";
+
+const noticeHasDisplayableContent = (n) =>
+  Boolean(
+    (n.titleHi && String(n.titleHi).trim()) ||
+      (n.titleEn && String(n.titleEn).trim()) ||
+      (n.descriptionHi && String(n.descriptionHi).trim()) ||
+      (n.descriptionEn && String(n.descriptionEn).trim()) ||
+      (n.imageUrl && String(n.imageUrl).trim())
+  );
 import SiteContent from "../models/SiteContent.js";
 import WebsiteDocument from "../models/WebsiteDocument.js";
 
 export const getPublicContent = async (req, res) => {
-  const notices = await Notice.find({ isActive: true }).sort({ createdAt: -1 });
+  const noticesRaw = await Notice.find({ isActive: true }).sort({ createdAt: -1 });
+  const notices = noticesRaw.filter(noticeHasDisplayableContent);
   const gallery = await GalleryImage.find().sort({ createdAt: -1 });
   const content = await SiteContent.find({ isActive: true }).sort({ order: 1, createdAt: -1 });
   const documents = await WebsiteDocument.find().sort({ createdAt: -1 });
@@ -32,8 +42,8 @@ export const createNotice = async (req, res) => {
     createdBy: req.user._id
   };
 
-  if (!payload.descriptionHi && !payload.descriptionEn) {
-    return res.status(400).json({ message: "At least one description is required" });
+  if (!noticeHasDisplayableContent(payload)) {
+    return res.status(400).json({ message: "Add at least a title, some text, or an image" });
   }
 
   const notice = await Notice.create(payload);
@@ -70,8 +80,8 @@ export const updateNotice = async (req, res) => {
     notice.imageUrl = `/uploads/${req.file.filename}`;
   }
 
-  if (!notice.descriptionHi && !notice.descriptionEn) {
-    return res.status(400).json({ message: "At least one description is required" });
+  if (!noticeHasDisplayableContent(notice)) {
+    return res.status(400).json({ message: "Add at least a title, some text, or an image" });
   }
 
   await notice.save();

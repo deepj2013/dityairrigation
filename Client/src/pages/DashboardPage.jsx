@@ -198,6 +198,9 @@ function DashboardPage() {
     image: null
   });
   const [uploadingNotice, setUploadingNotice] = useState(false);
+  const [noticeImagePreviewUrl, setNoticeImagePreviewUrl] = useState("");
+  const [editingNoticeId, setEditingNoticeId] = useState("");
+  const [noticeExistingImageUrl, setNoticeExistingImageUrl] = useState("");
   const [websiteContent, setWebsiteContent] = useState([]);
   const [heroGallery, setHeroGallery] = useState([]);
   const [websiteForm, setWebsiteForm] = useState({
@@ -230,6 +233,10 @@ function DashboardPage() {
             file: "फ़ाइल",
             noticeHeading: "पब्लिक नोटिफिकेशन प्रबंधन",
             noticeCreate: "नया नोटिफिकेशन बनाएं",
+            noticeEditing: "नोटिफिकेशन संपादित करें",
+            noticeEdit: "संपादन",
+            updateNotice: "अपडेट सेव करें",
+            cancelEdit: "रद्द करें",
             titleHi: "Title (Hindi) - optional",
             titleEn: "Title (English) - optional",
             descriptionHi: "Description (Hindi)",
@@ -262,6 +269,10 @@ function DashboardPage() {
             file: "File",
             noticeHeading: "Public Notification Management",
             noticeCreate: "Create New Notification",
+            noticeEditing: "Edit notification",
+            noticeEdit: "Edit",
+            updateNotice: "Update notification",
+            cancelEdit: "Cancel",
             titleHi: "Title (Hindi) - optional",
             titleEn: "Title (English) - optional",
             descriptionHi: "Description (Hindi)",
@@ -341,6 +352,16 @@ function DashboardPage() {
   useEffect(() => {
     if (!user) navigate("/login");
   }, [navigate, user]);
+
+  useEffect(() => {
+    if (noticeForm.image) {
+      const url = URL.createObjectURL(noticeForm.image);
+      setNoticeImagePreviewUrl(url);
+      return () => URL.revokeObjectURL(url);
+    }
+    setNoticeImagePreviewUrl(noticeExistingImageUrl || "");
+    return undefined;
+  }, [noticeForm.image, noticeExistingImageUrl]);
 
   const logout = () => {
     localStorage.removeItem("token");
@@ -700,10 +721,47 @@ function DashboardPage() {
     setStatusMessage("पासवर्ड सफलतापूर्वक अपडेट हो गया है।");
   };
 
-  const createNotice = async (event) => {
+  const resetNoticeForm = () => {
+    setEditingNoticeId("");
+    setNoticeExistingImageUrl("");
+    setNoticeForm({
+      titleHi: "",
+      titleEn: "",
+      descriptionHi: "",
+      descriptionEn: "",
+      isActive: true,
+      image: null
+    });
+  };
+
+  const loadNoticeForEdit = (item) => {
+    setEditingNoticeId(item._id);
+    setNoticeExistingImageUrl(item.imageUrl?.trim() ? item.imageUrl : "");
+    setNoticeForm({
+      titleHi: item.titleHi || "",
+      titleEn: item.titleEn || "",
+      descriptionHi: item.descriptionHi || "",
+      descriptionEn: item.descriptionEn || "",
+      isActive: item.isActive !== false,
+      image: null
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const saveNotice = async (event) => {
     event.preventDefault();
-    if (isNoticeContentEmpty(noticeForm.descriptionHi) && isNoticeContentEmpty(noticeForm.descriptionEn)) {
-      setStatusMessage("नोटिफिकेशन में Hindi या English विवरण में से कम से कम एक जरूरी है।");
+    const hasDesc =
+      !isNoticeContentEmpty(noticeForm.descriptionHi) || !isNoticeContentEmpty(noticeForm.descriptionEn);
+    const hasTitle = Boolean(noticeForm.titleHi?.trim() || noticeForm.titleEn?.trim());
+    const hasNewImg = Boolean(noticeForm.image);
+    const hasKeptImg = Boolean(noticeExistingImageUrl?.trim());
+    const hasImg = hasNewImg || hasKeptImg;
+    if (!hasDesc && !hasTitle && !hasImg) {
+      setStatusMessage(
+        isHindi
+          ? "कम से कम शीर्षक, टेक्स्ट या इमेज में से एक जरूरी है।"
+          : "Add at least a title, text, or an image."
+      );
       return;
     }
 
@@ -717,18 +775,18 @@ function DashboardPage() {
 
     setUploadingNotice(true);
     try {
-      await api.post("/public/notice", payload, {
-        headers: { "Content-Type": "multipart/form-data" }
-      });
-      setStatusMessage("नोटिफिकेशन सेव हो गया है।");
-      setNoticeForm({
-        titleHi: "",
-        titleEn: "",
-        descriptionHi: "",
-        descriptionEn: "",
-        isActive: true,
-        image: null
-      });
+      if (editingNoticeId) {
+        await api.patch(`/public/notice/${editingNoticeId}`, payload, {
+          headers: { "Content-Type": "multipart/form-data" }
+        });
+        setStatusMessage(isHindi ? "नोटिफिकेशन अपडेट हो गया है।" : "Notification updated.");
+      } else {
+        await api.post("/public/notice", payload, {
+          headers: { "Content-Type": "multipart/form-data" }
+        });
+        setStatusMessage(isHindi ? "नोटिफिकेशन सेव हो गया है।" : "Notification saved.");
+      }
+      resetNoticeForm();
       fetchNotices();
     } finally {
       setUploadingNotice(false);
@@ -742,8 +800,9 @@ function DashboardPage() {
   };
 
   const deleteNotice = async (id) => {
+    if (editingNoticeId === id) resetNoticeForm();
     await api.delete(`/public/notice/${id}`);
-    setStatusMessage("नोटिफिकेशन डिलीट कर दिया गया है।");
+    setStatusMessage(isHindi ? "नोटिफिकेशन डिलीट कर दिया गया है।" : "Notification deleted.");
     fetchNotices();
   };
 
@@ -1680,8 +1739,21 @@ function DashboardPage() {
               </div>
               {statusMessage && <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{statusMessage}</p>}
 
-              <form onSubmit={createNotice} className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
-                <h3 className="text-base font-semibold text-slate-800 md:col-span-2">{ui.noticeCreate}</h3>
+              <form onSubmit={saveNotice} className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 md:col-span-2">
+                  <h3 className="text-base font-semibold text-slate-800">
+                    {editingNoticeId ? ui.noticeEditing : ui.noticeCreate}
+                  </h3>
+                  {editingNoticeId ? (
+                    <button
+                      type="button"
+                      onClick={resetNoticeForm}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      {ui.cancelEdit}
+                    </button>
+                  ) : null}
+                </div>
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 md:col-span-2">
                   <p className="font-semibold">Editor tools</p>
                   <p className="mt-1 whitespace-pre-line">{NOTICE_EDITOR_HELP}</p>
@@ -1718,6 +1790,13 @@ function DashboardPage() {
                 </label>
                 <label className="rounded-lg border border-slate-300 bg-white p-2.5 text-sm">
                   {ui.optionalImage}
+                  {editingNoticeId && noticeExistingImageUrl ? (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {isHindi
+                        ? "नई फ़ाइल चुनें तभी इमेज बदलेगी; खाली छोड़ने पर पुरानी इमेज रहेगी।"
+                        : "Choose a new file only to replace the image; leave empty to keep the current one."}
+                    </p>
+                  ) : null}
                   <input
                     type="file"
                     accept="image/*"
@@ -1729,7 +1808,7 @@ function DashboardPage() {
                   disabled={uploadingNotice}
                   className="rounded-lg bg-emerald-600 p-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60 md:col-span-2"
                 >
-                  {uploadingNotice ? ui.saving : ui.saveNotice}
+                  {uploadingNotice ? ui.saving : editingNoticeId ? ui.updateNotice : ui.saveNotice}
                 </button>
               </form>
               <div className="grid gap-3 md:grid-cols-2">
@@ -1737,14 +1816,30 @@ function DashboardPage() {
                   <h4 className="text-sm font-semibold text-slate-700">Hindi preview</h4>
                   <div className="mt-2 space-y-2 text-sm leading-7 text-slate-800">
                     {noticeForm.titleHi ? <p className="text-lg font-bold text-red-600">{noticeForm.titleHi}</p> : null}
-                    {isNoticeContentEmpty(noticeForm.descriptionHi) ? <p>Preview will appear here...</p> : renderNoticeContent(noticeForm.descriptionHi)}
+                    {!isNoticeContentEmpty(noticeForm.descriptionHi) ? renderNoticeContent(noticeForm.descriptionHi) : null}
+                    {noticeImagePreviewUrl ? (
+                      <img src={noticeImagePreviewUrl} alt="" className="max-h-56 w-full rounded-lg object-contain" />
+                    ) : null}
+                    {!noticeForm.titleHi?.trim() &&
+                    isNoticeContentEmpty(noticeForm.descriptionHi) &&
+                    !noticeImagePreviewUrl ? (
+                      <p className="text-slate-400">टेक्स्ट या इमेज जोड़ें...</p>
+                    ) : null}
                   </div>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-white p-4">
                   <h4 className="text-sm font-semibold text-slate-700">English preview</h4>
                   <div className="mt-2 space-y-2 text-sm leading-7 text-slate-800">
                     {noticeForm.titleEn ? <p className="text-lg font-bold text-red-600">{noticeForm.titleEn}</p> : null}
-                    {isNoticeContentEmpty(noticeForm.descriptionEn) ? <p>Preview will appear here...</p> : renderNoticeContent(noticeForm.descriptionEn)}
+                    {!isNoticeContentEmpty(noticeForm.descriptionEn) ? renderNoticeContent(noticeForm.descriptionEn) : null}
+                    {noticeImagePreviewUrl ? (
+                      <img src={noticeImagePreviewUrl} alt="" className="max-h-56 w-full rounded-lg object-contain" />
+                    ) : null}
+                    {!noticeForm.titleEn?.trim() &&
+                    isNoticeContentEmpty(noticeForm.descriptionEn) &&
+                    !noticeImagePreviewUrl ? (
+                      <p className="text-slate-400">Add text or image...</p>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -1784,6 +1879,13 @@ function DashboardPage() {
                           </td>
                           <td className="border p-2">
                             <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => loadNoticeForEdit(item)}
+                                className="rounded bg-slate-700 px-2 py-1 text-xs font-semibold text-white hover:bg-slate-800"
+                              >
+                                {ui.noticeEdit}
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => toggleNoticeStatus(item)}

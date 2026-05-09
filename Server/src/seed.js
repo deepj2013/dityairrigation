@@ -8,6 +8,44 @@ import FarmerForm from "./models/FarmerForm.js";
 
 dotenv.config();
 
+/** Matches the Hindi registration flyer (नि:शुल्क पंजीयन). Idempotent via fixed English title. */
+const FREE_REGISTRATION_NOTICE_TITLE_EN =
+  "[Seed] Free registration — fencing, drip, sprinkler schemes (WhatsApp)";
+
+const FREE_REGISTRATION_DESCRIPTION_HI = `
+<p><strong><span style="color: #dc2626">नि:शुल्क पंजीयन</span></strong></p>
+<p><span style="color: #15803d">तार फेंसिंग, ड्रिप, मिनी स्प्रिंकलर, पाईप लाइन, प्याज हाउस, नेट हाउस, पम्प इत्यादि की विभिन्न योजनाओ के लिए आन लाइन पंजीयन शुरू हो गए है , नि:शुल्क पंजीयन करवाने के लिए कृपया डॉक्युमेंट व्हाट्स अप करें</span></p>
+<ol>
+<li><span style="color: #2563eb">आधार कार्ड दोनों साइड ,</span></li>
+<li><span style="color: #2563eb">पावती या जमीन के कागज</span></li>
+<li><span style="color: #2563eb">समग्र आई डी,</span></li>
+<li><span style="color: #2563eb">पासपोर्ट फोटो</span></li>
+<li><span style="color: #2563eb">बैंक पास बुक का प्रथम पेज,</span></li>
+<li><span style="color: #2563eb">जाति प्रमाण पत्र (अजा / अजजा के लिए )</span></li>
+<li><span style="color: #2563eb">प्रत्येक के लिए आधार से लिंक मोबाइल नंबर ,</span></li>
+</ol>
+<p><span style="color: #171717">नोट : तीन या चार बार ओटीपी लगेगी केवल इस नंबर पर पूछकर ही देवे ।</span></p>
+<p><strong><span style="color: #dc2626">व्हाट्स अप करें :- 8319171144 (रूपेश राजपूत , बागली)</span></strong></p>
+<p><span style="color: #171717">( कृषक आन लाइन लॉटरी के द्वारा चयनित किए जावेंगे, पंजीयन सात सालो के लिए होगा )</span></p>
+`.trim();
+
+const FREE_REGISTRATION_DESCRIPTION_EN = `
+<p><strong><span style="color: #dc2626">Free registration</span></strong></p>
+<p><span style="color: #15803d">Online registration has started for schemes such as wire fencing, drip, mini sprinkler, pipeline, onion house, net house, pump, etc. For free registration, please WhatsApp your documents.</span></p>
+<ol>
+<li><span style="color: #2563eb">Aadhaar card (both sides)</span></li>
+<li><span style="color: #2563eb">Receipt or land documents</span></li>
+<li><span style="color: #2563eb">Samagra ID</span></li>
+<li><span style="color: #2563eb">Passport-size photo</span></li>
+<li><span style="color: #2563eb">First page of bank passbook</span></li>
+<li><span style="color: #2563eb">Caste certificate (for SC/ST)</span></li>
+<li><span style="color: #2563eb">Aadhaar-linked mobile number for each applicant</span></li>
+</ol>
+<p><span style="color: #171717">Note: OTP may be needed three or four times—share it only after confirming on this number.</span></p>
+<p><strong><span style="color: #dc2626">WhatsApp: 8319171144 (Rupesh Rajput, Bagli)</span></strong></p>
+<p><span style="color: #171717">(Farmers will be selected via online lottery; registration is valid for seven years.)</span></p>
+`.trim();
+
 const run = async () => {
   await connectDB();
   let adminUser = await User.findOne({ role: "UNIVERSAL_ADMIN" });
@@ -65,6 +103,22 @@ const run = async () => {
         createdBy: adminUser._id
       }
     ]);
+  }
+
+  const flyerNotice = await Notice.findOne({ titleEn: FREE_REGISTRATION_NOTICE_TITLE_EN });
+  if (!flyerNotice) {
+    await Notice.create({
+      titleHi: "नि:शुल्क पंजीयन — योजनाएँ (व्हाट्सऐप)",
+      titleEn: FREE_REGISTRATION_NOTICE_TITLE_EN,
+      descriptionHi: FREE_REGISTRATION_DESCRIPTION_HI,
+      descriptionEn: FREE_REGISTRATION_DESCRIPTION_EN,
+      imageUrl: "",
+      isActive: true,
+      createdBy: adminUser._id
+    });
+    console.log("Seeded free-registration flyer notice (Hindi/English HTML).");
+  } else {
+    console.log("Free-registration flyer notice already present.");
   }
 
   const galleryCount = await GalleryImage.countDocuments();
